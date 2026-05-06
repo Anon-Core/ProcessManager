@@ -8,7 +8,7 @@ from colorama import Fore, Style, init
 init(autoreset=True)
 
 REFRESH_INTERVAL = 2
-TOP_N = 20
+TOP_N = 30
 
 
 def clear():
@@ -120,7 +120,7 @@ def main():
             print_header()
             processes = collect_processes()
             print_processes(processes)
-            print("\n" + Fore.BLACK + Style.DIM + f" Refresh every {REFRESH_INTERVAL}s | Ctrl+C to exit")
+            print("\n" + Fore.WHITE + Style.DIM + f" Refresh every {REFRESH_INTERVAL}s | Ctrl+C to exit")
             time.sleep(REFRESH_INTERVAL)
         except KeyboardInterrupt:
             print(Fore.RED + "\nStopped.")
