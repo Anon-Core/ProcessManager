@@ -2,5 +2,5 @@
 
 A simple Python script to monitor processes in the terminal.
 
-##Install
+## Install
 ``Pip install psutil coloram``
