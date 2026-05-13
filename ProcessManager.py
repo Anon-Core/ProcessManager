@@ -1,5 +1,3 @@
-# Proccess Manager Linux
-
 import os
 import time
 from datetime import datetime
@@ -9,125 +7,183 @@ from colorama import Fore, Style, init
 
 init(autoreset=True)
 
-REFRESH_INTERVAL = 2
-TOP_N = 30
 
+class AnonProcessManager:
+    REFRESH_DELAY = 2
+    MAX_PROCESSES = 25
 
-def clear():
-    os.system("cls" if os.name == "nt" else "clear")
+    PROCESS_STATES = {
+        "running": "RUNNING",
+        "sleeping": "WAITING",
+        "disk-sleep": "WAITING",
+        "idle": "WAITING",
+        "stopped": "READ",
+        "zombie": "ZOMBIE",
+        "dead": "TERMINATING",
+    }
 
+    STATE_COLORS = {
+        "RUNNING": Fore.GREEN,
+        "WAITING": Fore.CYAN,
+        "READ": Fore.YELLOW,
+        "TERMINATING": Fore.RED,
+        "ZOMBIE": Fore.MAGENTA,
+        "DAEMON": Fore.BLUE,
+    }
 
-def color_cpu(cpu: float) -> str:
-    if cpu >= 70:
-        return Fore.RED
-    elif cpu >= 30:
-        return Fore.YELLOW
-    return Fore.GREEN
+    def clear_screen(self):
+        os.system("cls" if os.name == "nt" else "clear")
 
+    def classify_process(self, process_name, status):
+        state = self.PROCESS_STATES.get(status.lower(), "WAITING")
 
-def color_mem(mem: float) -> str:
-    if mem >= 20:
-        return Fore.RED
-    elif mem >= 10:
-        return Fore.YELLOW
-    return Fore.CYAN
+        # daemon detection
+        if process_name.endswith("d"):
+            return "DAEMON"
 
+        return state
 
-def color_status(status: str) -> str:
-    s = status.lower()
-    if s == "running":
+    def cpu_color(self, value):
+        if value >= 70:
+            return Fore.RED
+        elif value >= 30:
+            return Fore.YELLOW
         return Fore.GREEN
-    elif s in ("sleeping", "idle"):
+
+    def memory_color(self, value):
+        if value >= 20:
+            return Fore.RED
+        elif value >= 10:
+            return Fore.YELLOW
         return Fore.CYAN
-    elif s in ("stopped", "suspended"):
-        return Fore.YELLOW
-    elif s in ("zombie", "dead"):
-        return Fore.RED
-    return Fore.WHITE
 
+    def collect_processes(self):
+        result = []
 
-def collect_processes():
-    processes = []
+        for process in psutil.process_iter([
+            "pid",
+            "name",
+            "username",
+            "status",
+            "cpu_percent",
+            "memory_percent"
+        ]):
+            try:
+                info = process.info
 
-    for proc in psutil.process_iter(
-        ['pid', 'name', 'username', 'status', 'cpu_percent', 'memory_percent']
-    ):
-        try:
-            info = proc.info
-            processes.append({
-                "pid": info.get("pid", 0),
-                "name": info.get("name") or "-",
-                "user": info.get("username") or "-",
-                "status": info.get("status") or "-",
-                "cpu": info.get("cpu_percent") or 0.0,
-                "mem": info.get("memory_percent") or 0.0,
-            })
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-            continue
+                name = info.get("name") or "unknown"
+                status = info.get("status") or "unknown"
 
-    processes.sort(key=lambda x: x["cpu"], reverse=True)
-    return processes[:TOP_N]
+                state = self.classify_process(name, status)
 
+                result.append({
+                    "pid": info.get("pid", 0),
+                    "user": info.get("username") or "system",
+                    "name": name,
+                    "state": state,
+                    "cpu": info.get("cpu_percent") or 0.0,
+                    "memory": info.get("memory_percent") or 0.0,
+                })
 
-def print_header():
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    total_cpu = psutil.cpu_percent(interval=None)
-    total_mem = psutil.virtual_memory()
+            except (
+                psutil.NoSuchProcess,
+                psutil.AccessDenied,
+                psutil.ZombieProcess
+            ):
+                continue
 
-    print(Fore.CYAN + Style.BRIGHT + "=" * 100)
-    print(
-        Fore.CYAN + Style.BRIGHT +
-        f" Process Monitor    Time: {now}    CPU: {total_cpu:5.1f}%    "
-        f"RAM: {total_mem.percent:5.1f}%"
-    )
-    print(Fore.CYAN + Style.BRIGHT + "=" * 100)
+        result.sort(key=lambda p: p["cpu"], reverse=True)
 
-    print(
-        Style.BRIGHT +
-        f"{'PID':<8} {'USER':<18} {'NAME':<28} {'STATUS':<14} {'CPU %':>8} {'MEM %':>8}"
-    )
-    print("-" * 100)
+        return result[:self.MAX_PROCESSES]
 
+    def print_header(self):
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-def print_processes(processes):
-    for p in processes:
-        cpu_c = color_cpu(p["cpu"])
-        mem_c = color_mem(p["mem"])
-        st_c = color_status(p["status"])
+        total_cpu = psutil.cpu_percent(interval=None)
+        total_memory = psutil.virtual_memory()
+
+        print(Fore.CYAN + Style.BRIGHT + "=" * 110)
 
         print(
-            f"{Fore.MAGENTA}{str(p['pid']):<8} "
-            f"{Fore.BLUE}{p['user'][:17]:<18} "
-            f"{Fore.WHITE}{p['name'][:27]:<28} "
-            f"{st_c}{p['status'][:13]:<14} "
-            f"{cpu_c}{p['cpu']:>7.1f}% "
-            f"{mem_c}{p['mem']:>7.1f}%"
+            Fore.CYAN + Style.BRIGHT +
+            f"  AnonProcessManager   "
+            f"Time: {now}   "
+            f"CPU: {total_cpu:5.1f}%   "
+            f"RAM: {total_memory.percent:5.1f}%"
         )
 
+        print(Fore.CYAN + Style.BRIGHT + "=" * 110)
 
-def main():
-    print("Initializing CPU counters...")
-    for proc in psutil.process_iter():
-        try:
-            proc.cpu_percent(interval=None)
-        except Exception:
-            pass
+        print(
+            Style.BRIGHT +
+            f"{'PID':<8}"
+            f"{'USER':<18}"
+            f"{'PROCESS':<30}"
+            f"{'STATE':<16}"
+            f"{'CPU':>10}"
+            f"{'RAM':>10}"
+        )
 
-    psutil.cpu_percent(interval=None)
-    time.sleep(0.5)
+        print("-" * 110)
 
-    while True:
-        try:
-            clear()
-            print_header()
-            processes = collect_processes()
-            print_processes(processes)
-            print("\n" + Fore.WHITE + Style.DIM + f" Refresh every {REFRESH_INTERVAL}s | Ctrl+C to exit")
-            time.sleep(REFRESH_INTERVAL)
-        except KeyboardInterrupt:
-            print(Fore.RED + "\nStopped.")
-            break
+    def print_processes(self, processes):
+        for proc in processes:
+            state_color = self.STATE_COLORS.get(
+                proc["state"],
+                Fore.WHITE
+            )
+
+            cpu_color = self.cpu_color(proc["cpu"])
+            mem_color = self.memory_color(proc["memory"])
+
+            print(
+                f"{Fore.MAGENTA}{str(proc['pid']):<8}"
+                f"{Fore.BLUE}{proc['user'][:17]:<18}"
+                f"{Fore.WHITE}{proc['name'][:29]:<30}"
+                f"{state_color}{proc['state']:<16}"
+                f"{cpu_color}{proc['cpu']:>8.1f}%  "
+                f"{mem_color}{proc['memory']:>8.1f}%"
+            )
+
+    def initialize_cpu_counters(self):
+        print(Fore.YELLOW + "Initializing process counters...\n")
+
+        for process in psutil.process_iter():
+            try:
+                process.cpu_percent(interval=None)
+            except Exception:
+                pass
+
+        psutil.cpu_percent(interval=None)
+        time.sleep(0.5)
+
+    def run(self):
+        self.initialize_cpu_counters()
+
+        while True:
+            try:
+                self.clear_screen()
+
+                self.print_header()
+
+                processes = self.collect_processes()
+
+                self.print_processes(processes)
+
+                print(
+                    "\n" +
+                    Fore.WHITE +
+                    Style.DIM +
+                    f"refresh interval: {self.REFRESH_DELAY}s | Ctrl+C to exit"
+                )
+
+                time.sleep(self.REFRESH_DELAY)
+
+            except KeyboardInterrupt:
+                print(Fore.RED + "\nmonitor terminated.")
+                break
 
 
 if __name__ == "__main__":
-    main()
+    manager = AnonProcessManager()
+    manager.run()
